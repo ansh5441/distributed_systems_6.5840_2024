@@ -2,6 +2,7 @@ package kvsrv
 
 import (
 	"crypto/rand"
+	"log"
 	"math/big"
 
 	"6.5840/labrpc"
@@ -24,6 +25,7 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.server = server
 	// You'll have to add code here.
+
 	return ck
 }
 
@@ -44,8 +46,10 @@ func (ck *Clerk) Get(key string) string {
 	var reply GetReply
 	ok := ck.server.Call("KVServer.Get", &args, &reply)
 	if !ok {
+		log.Printf("Get(%v) failed", key)
 		return ""
 	}
+	log.Printf("Get(%v) = %v", key, reply.Value)
 	return reply.Value
 }
 
@@ -63,8 +67,10 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	var reply PutAppendReply
 	ok := ck.server.Call("KVServer."+op, &args, &reply)
 	if !ok {
+		log.Printf("%s(%v,%v) failed", op, key, value)
 		return ""
 	}
+	log.Printf("%s(%v,%v) = %v", op, key, value, reply.Value)
 	return reply.Value
 }
 
