@@ -2,16 +2,17 @@ package kvsrv
 
 import (
 	"crypto/rand"
-	"log"
 	"math/big"
+	"sync"
 
 	"6.5840/labrpc"
 )
 
 type Clerk struct {
-	server *labrpc.ClientEnd
-	// You will have to modify this struct.
-
+	server                    *labrpc.ClientEnd
+	clientId                  int64
+	messageSequenceNumber     int64
+	messageSequenceNumberLock sync.Mutex
 }
 
 func nrand() int64 {
@@ -25,7 +26,9 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.server = server
 	// You'll have to add code here.
-
+	ck.clientId = nrand()
+	ck.messageSequenceNumber = 0
+	ck.messageSequenceNumberLock = sync.Mutex{}
 	return ck
 }
 
@@ -43,14 +46,27 @@ func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
 	var args GetArgs
+	args.Key = key
+	args.ClientId = ck.clientId
+	args.MessageSequenceNumber = ck.getMessageSequenceNumber()
+
 	var reply GetReply
 	ok := ck.server.Call("KVServer.Get", &args, &reply)
 	if !ok {
-		log.Printf("Get(%v) failed", key)
+		// log.Printf("Get(%v) failed", key)
 		return ""
 	}
-	log.Printf("Get(%v) = %v", key, reply.Value)
+	// log.Printf("Get(%v) = %v", key, reply.Value)
 	return reply.Value
+}
+
+func (ck *Clerk) getMessageSequenceNumber() int64 {
+	ck.messageSequenceNumberLock.Lock()
+	ck.messageSequenceNumber++
+	messageSequenceNumner := ck.messageSequenceNumber
+	ck.messageSequenceNumberLock.Unlock()
+	return messageSequenceNumner
+
 }
 
 // shared by Put and Append.
@@ -64,13 +80,18 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
 	var args PutAppendArgs
+	args.Key = key
+	args.Value = value
+	args.ClientId = ck.clientId
+	args.MessageSequenceNumber = ck.getMessageSequenceNumber()
 	var reply PutAppendReply
+	// log.Printf("Client: args = %s(%v,%v)", op, args.Key, args.Value)
 	ok := ck.server.Call("KVServer."+op, &args, &reply)
 	if !ok {
-		log.Printf("%s(%v,%v) failed", op, key, value)
+		// log.Printf("%s(%v,%v) failed", op, key, value)
 		return ""
 	}
-	log.Printf("%s(%v,%v) = %v", op, key, value, reply.Value)
+	// log.Printf("Client: %s(%v,%v) = %v", op, key, value, reply.Value)
 	return reply.Value
 }
 
