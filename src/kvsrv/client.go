@@ -1,9 +1,9 @@
 package kvsrv
 
 import (
-	"crypto/rand"
-	"math/big"
+	"math/rand"
 	"sync"
+	"time"
 
 	"6.5840/labrpc"
 )
@@ -16,10 +16,9 @@ type Clerk struct {
 }
 
 func nrand() int64 {
-	max := big.NewInt(int64(1) << 62)
-	bigx, _ := rand.Int(rand.Reader, max)
-	x := bigx.Int64()
-	return x
+	// generate a random number between 0 and 9999
+	randomNumber := rand.Int63()
+	return randomNumber % 10000
 }
 
 func MakeClerk(server *labrpc.ClientEnd) *Clerk {
@@ -50,11 +49,15 @@ func (ck *Clerk) Get(key string) string {
 	args.ClientId = ck.clientId
 	args.MessageSequenceNumber = ck.getMessageSequenceNumber()
 
+	// log.Printf("clientId: %v, messageSequenceNumber: %v, Get(%v)", args.ClientId, args.MessageSequenceNumber, key)
 	var reply GetReply
 	ok := ck.server.Call("KVServer.Get", &args, &reply)
-	if !ok {
-		// log.Printf("Get(%v) failed", key)
-		return ""
+	backoffMS := 10
+	for !ok {
+		// log.Printf("clientId: %v, messageSequenceNumber: %v failed", args.ClientId, args.MessageSequenceNumber)
+		backoffMS *= 2
+		time.Sleep(time.Duration(backoffMS) * time.Millisecond)
+		ok = ck.server.Call("KVServer.Get", &args, &reply)
 	}
 	// log.Printf("Get(%v) = %v", key, reply.Value)
 	return reply.Value
@@ -63,9 +66,9 @@ func (ck *Clerk) Get(key string) string {
 func (ck *Clerk) getMessageSequenceNumber() int64 {
 	ck.messageSequenceNumberLock.Lock()
 	ck.messageSequenceNumber++
-	messageSequenceNumner := ck.messageSequenceNumber
+	messageSequenceNumber := ck.messageSequenceNumber
 	ck.messageSequenceNumberLock.Unlock()
-	return messageSequenceNumner
+	return messageSequenceNumber
 
 }
 
@@ -85,13 +88,17 @@ func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	args.ClientId = ck.clientId
 	args.MessageSequenceNumber = ck.getMessageSequenceNumber()
 	var reply PutAppendReply
-	// log.Printf("Client: args = %s(%v,%v)", op, args.Key, args.Value)
+	// log.Printf("clientId: %v, messageSequenceNumber: %v, %s(%v,%v)", args.ClientId, args.MessageSequenceNumber, op, key, value)
 	ok := ck.server.Call("KVServer."+op, &args, &reply)
-	if !ok {
-		// log.Printf("%s(%v,%v) failed", op, key, value)
-		return ""
+	backoffMS := 10
+	for !ok {
+		// log.Printf("clientID: %v, messageSequenceNumber: %v failed", args.ClientId, args.MessageSequenceNumber)
+		backoffMS *= 2
+		time.Sleep(time.Duration(backoffMS) * time.Millisecond)
+		ok = ck.server.Call("KVServer."+op, &args, &reply)
+
 	}
-	// log.Printf("Client: %s(%v,%v) = %v", op, key, value, reply.Value)
+	// log.Printf("ClientID: %v, %s(%v,%v) = %v", args.ClientId, op, key, value, reply.Value)
 	return reply.Value
 }
 
