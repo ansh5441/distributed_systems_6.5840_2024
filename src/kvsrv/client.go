@@ -1,26 +1,33 @@
 package kvsrv
 
-import "6.5840/labrpc"
-import "crypto/rand"
-import "math/big"
+import (
+	"math/rand"
+	"sync"
+	"time"
 
+	"6.5840/labrpc"
+)
 
 type Clerk struct {
-	server *labrpc.ClientEnd
-	// You will have to modify this struct.
+	server                    *labrpc.ClientEnd
+	clientId                  int64
+	messageSequenceNumber     int64
+	messageSequenceNumberLock sync.Mutex
 }
 
 func nrand() int64 {
-	max := big.NewInt(int64(1) << 62)
-	bigx, _ := rand.Int(rand.Reader, max)
-	x := bigx.Int64()
-	return x
+	// generate a random number between 0 and 9999
+	randomNumber := rand.Int63()
+	return randomNumber % 10000
 }
 
 func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.server = server
 	// You'll have to add code here.
+	ck.clientId = nrand()
+	ck.messageSequenceNumber = 0
+	ck.messageSequenceNumberLock = sync.Mutex{}
 	return ck
 }
 
@@ -37,7 +44,32 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
-	return ""
+	var args GetArgs
+	args.Key = key
+	args.ClientId = ck.clientId
+	args.MessageSequenceNumber = ck.getMessageSequenceNumber()
+
+	// log.Printf("clientId: %v, messageSequenceNumber: %v, Get(%v)", args.ClientId, args.MessageSequenceNumber, key)
+	var reply GetReply
+	ok := ck.server.Call("KVServer.Get", &args, &reply)
+	backoffMS := 10
+	for !ok {
+		// log.Printf("clientId: %v, messageSequenceNumber: %v failed", args.ClientId, args.MessageSequenceNumber)
+		backoffMS *= 2
+		time.Sleep(time.Duration(backoffMS) * time.Millisecond)
+		ok = ck.server.Call("KVServer.Get", &args, &reply)
+	}
+	// log.Printf("Get(%v) = %v", key, reply.Value)
+	return reply.Value
+}
+
+func (ck *Clerk) getMessageSequenceNumber() int64 {
+	ck.messageSequenceNumberLock.Lock()
+	ck.messageSequenceNumber++
+	messageSequenceNumber := ck.messageSequenceNumber
+	ck.messageSequenceNumberLock.Unlock()
+	return messageSequenceNumber
+
 }
 
 // shared by Put and Append.
@@ -50,7 +82,24 @@ func (ck *Clerk) Get(key string) string {
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
-	return ""
+	var args PutAppendArgs
+	args.Key = key
+	args.Value = value
+	args.ClientId = ck.clientId
+	args.MessageSequenceNumber = ck.getMessageSequenceNumber()
+	var reply PutAppendReply
+	// log.Printf("clientId: %v, messageSequenceNumber: %v, %s(%v,%v)", args.ClientId, args.MessageSequenceNumber, op, key, value)
+	ok := ck.server.Call("KVServer."+op, &args, &reply)
+	backoffMS := 10
+	for !ok {
+		// log.Printf("clientID: %v, messageSequenceNumber: %v failed", args.ClientId, args.MessageSequenceNumber)
+		backoffMS *= 2
+		time.Sleep(time.Duration(backoffMS) * time.Millisecond)
+		ok = ck.server.Call("KVServer."+op, &args, &reply)
+
+	}
+	// log.Printf("ClientID: %v, %s(%v,%v) = %v", args.ClientId, op, key, value, reply.Value)
+	return reply.Value
 }
 
 func (ck *Clerk) Put(key string, value string) {
